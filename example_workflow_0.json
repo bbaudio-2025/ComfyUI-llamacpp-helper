@@ -1,0 +1,807 @@
+{
+  "id": "76e78850-2955-4d36-ad48-c690fed55afe",
+  "revision": 0,
+  "last_node_id": 30,
+  "last_link_id": 24,
+  "nodes": [
+    {
+      "id": 10,
+      "type": "ImageResizeKJv2",
+      "pos": [
+        -160,
+        5020
+      ],
+      "size": [
+        270,
+        340
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 12
+        },
+        {
+          "name": "mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            15
+          ]
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "60cd6bc1870db94c6eeb05fbe455147a8e91c4e9",
+        "Node name for S&R": "ImageResizeKJv2"
+      },
+      "widgets_values": [
+        640,
+        960,
+        "lanczos",
+        "stretch",
+        "0, 0, 0",
+        "center",
+        2,
+        "cpu"
+      ],
+      "widgets_values_named": {
+        "width": 640,
+        "height": 960,
+        "upscale_method": "lanczos",
+        "keep_proportion": "stretch",
+        "pad_color": "0, 0, 0",
+        "crop_position": "center",
+        "divisible_by": 2,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": 4,
+      "type": "LoadImage",
+      "pos": [
+        -700,
+        5020
+      ],
+      "size": [
+        290,
+        320
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.0",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "ComfyUI_temp_jlhpq_00128_.jpg",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "ComfyUI_temp_jlhpq_00128_.jpg",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 15,
+      "type": "BatchImagesNode",
+      "pos": [
+        -380,
+        5020
+      ],
+      "size": [
+        170,
+        90
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "image0",
+          "name": "images.image0",
+          "type": "IMAGE",
+          "link": 10
+        },
+        {
+          "label": "image1",
+          "name": "images.image1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 11
+        },
+        {
+          "label": "image2",
+          "name": "images.image2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.0",
+        "Node name for S&R": "BatchImagesNode"
+      }
+    },
+    {
+      "id": 17,
+      "type": "LLamaCppHelperLLM",
+      "pos": [
+        720,
+        5260
+      ],
+      "size": [
+        380,
+        500
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "llamacpp_model",
+          "type": "LLAMACPP_MODEL",
+          "link": 23
+        },
+        {
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 15
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "video",
+          "shape": 7,
+          "type": "VIDEO",
+          "link": null
+        },
+        {
+          "name": "skill",
+          "shape": 7,
+          "type": "LLAMACPP_SKILL",
+          "link": 16
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            24
+          ]
+        },
+        {
+          "name": "reasoning",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LLamaCppHelperLLM"
+      },
+      "widgets_values": [
+        "",
+        "",
+        "",
+        true,
+        true,
+        0.8,
+        0.95,
+        40,
+        8192,
+        1,
+        362108685,
+        "randomize"
+      ],
+      "widgets_values_named": {
+        "prompt": "",
+        "system_prompt": "",
+        "history": "",
+        "auto_start": true,
+        "release_after_use": true,
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_tokens": 8192,
+        "repeat_penalty": 1,
+        "seed": 362108685,
+        "control_after_generate": "randomize"
+      }
+    },
+    {
+      "id": 13,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        780,
+        6040
+      ],
+      "size": [
+        220,
+        170
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 2,
+      "inputs": [
+        {
+          "dir": 3,
+          "name": "source",
+          "type": "*",
+          "link": 9
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "738105af5fb14e96fbecaf406dc356e284797e8c",
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        "stopped server on port 8080"
+      ],
+      "widgets_values_named": {
+        "output": "stopped server on port 8080"
+      }
+    },
+    {
+      "id": 12,
+      "type": "LLamaCppHelperStop",
+      "pos": [
+        770,
+        5930
+      ],
+      "size": [
+        270,
+        60
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 2,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "status",
+          "type": "STRING",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LLamaCppHelperStop"
+      },
+      "widgets_values": [
+        8080
+      ],
+      "widgets_values_named": {
+        "port": 8080
+      }
+    },
+    {
+      "id": 26,
+      "type": "Fast Groups Muter (rgthree)",
+      "pos": [
+        680,
+        4990
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "OPT_CONNECTION",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "properties": {
+        "matchColors": "",
+        "matchTitle": "",
+        "showNav": false,
+        "showAllGraphs": true,
+        "sort": "position",
+        "customSortAlphabet": "",
+        "toggleRestriction": "always one"
+      }
+    },
+    {
+      "id": 19,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        150,
+        5190
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.0",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "强制20秒，ref2va，第一张身体参考图片，第二张是脸部参考图片，没有参考视频，没有参考音频。\n生成内容：一个女孩在舞台上跳舞，多种角度，多种运镜方式，强调动感。\n提示词使用英文。"
+      ],
+      "widgets_values_named": {
+        "value": "强制20秒，ref2va，第一张身体参考图片，第二张是脸部参考图片，没有参考视频，没有参考音频。\n生成内容：一个女孩在舞台上跳舞，多种角度，多种运镜方式，强调动感。\n提示词使用英文。"
+      }
+    },
+    {
+      "id": 27,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        1160,
+        5260
+      ],
+      "size": [
+        430,
+        460
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "dir": 3,
+          "name": "source",
+          "type": "*",
+          "link": 24
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "738105af5fb14e96fbecaf406dc356e284797e8c",
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "output": ""
+      }
+    },
+    {
+      "id": 23,
+      "type": "MarkdownNote",
+      "pos": [
+        1620,
+        5260
+      ],
+      "size": [
+        460,
+        370
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "text": ""
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 11,
+      "type": "LLamaCppSkill",
+      "pos": [
+        -200,
+        5850
+      ],
+      "size": [
+        730,
+        130
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "skill",
+          "type": "LLAMACPP_SKILL",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LLamaCppSkill"
+      },
+      "widgets_values": [
+        "C:\\Users\\bbaudio\\.config\\opencode\\skill\\Minimax-H3-Prompt-AgentSkill",
+        true,
+        true,
+        8000
+      ],
+      "widgets_values_named": {
+        "skill": "C:\\Users\\bbaudio\\.config\\opencode\\skill\\Minimax-H3-Prompt-AgentSkill",
+        "include_files": true,
+        "include_images": true,
+        "max_file_chars": 8000
+      }
+    },
+    {
+      "id": 14,
+      "type": "LoadImage",
+      "pos": [
+        -700,
+        5400
+      ],
+      "size": [
+        290,
+        320
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            11
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.0",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "face05.jpg",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "face05.jpg",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 25,
+      "type": "LLamaCppModel",
+      "pos": [
+        -200,
+        5460
+      ],
+      "size": [
+        730,
+        330
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "LLAMACPP_MODEL",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LLamaCppModel"
+      },
+      "widgets_values": [
+        "C:\\Users\\bbaudio\\MyApps\\AItemp\\llama-bin-win-cuda-13.3-x64\\llama-server.exe",
+        "C:\\Users\\bbaudio\\MyApps\\AItemp\\Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf",
+        "C:\\Users\\bbaudio\\MyApps\\AItemp\\gemma-4-E2B-it\\mmproj-BF16.gguf",
+        "127.0.0.1",
+        8080,
+        99,
+        4096,
+        true,
+        true,
+        "",
+        "llamacpp-helper"
+      ],
+      "widgets_values_named": {
+        "server_exe": "C:\\Users\\bbaudio\\MyApps\\AItemp\\llama-bin-win-cuda-13.3-x64\\llama-server.exe",
+        "model_path": "C:\\Users\\bbaudio\\MyApps\\AItemp\\Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf",
+        "mmproj_path": "C:\\Users\\bbaudio\\MyApps\\AItemp\\gemma-4-E2B-it\\mmproj-BF16.gguf",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "n_gpu_layers": 99,
+        "context_size": 4096,
+        "auto_start": true,
+        "mmproj_gpu_offload": true,
+        "advanced_launch_args": "",
+        "model_name": "llamacpp-helper"
+      }
+    },
+    {
+      "id": 29,
+      "type": "Note",
+      "pos": [
+        1500,
+        5110
+      ],
+      "size": [
+        230,
+        90
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "LLM模型输出的文字是markdown格式的，需要的话手动复制粘贴到右方Markdown Note节点里显示"
+      ],
+      "widgets_values_named": {
+        "text": "LLM模型输出的文字是markdown格式的，需要的话手动复制粘贴到右方Markdown Note节点里显示"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 28,
+      "type": "Note",
+      "pos": [
+        950,
+        4990
+      ],
+      "size": [
+        230,
+        90
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "如果要完全关闭llamacpp，点击stop llamacpp。\n不过一般没必要。"
+      ],
+      "widgets_values_named": {
+        "text": "如果要完全关闭llamacpp，点击stop llamacpp。\n不过一般没必要。"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 30,
+      "type": "Note",
+      "pos": [
+        140,
+        6030
+      ],
+      "size": [
+        230,
+        90
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "如果没有skill文件，这个节点可以去掉"
+      ],
+      "widgets_values_named": {
+        "text": "如果没有skill文件，这个节点可以去掉"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    }
+  ],
+  "links": [
+    [
+      9,
+      12,
+      0,
+      13,
+      0,
+      "STRING"
+    ],
+    [
+      10,
+      4,
+      0,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
+      11,
+      14,
+      0,
+      15,
+      1,
+      "IMAGE"
+    ],
+    [
+      12,
+      15,
+      0,
+      10,
+      0,
+      "IMAGE"
+    ],
+    [
+      15,
+      10,
+      0,
+      17,
+      1,
+      "IMAGE"
+    ],
+    [
+      16,
+      11,
+      0,
+      17,
+      4,
+      "LLAMACPP_SKILL"
+    ],
+    [
+      18,
+      19,
+      0,
+      17,
+      5,
+      "STRING"
+    ],
+    [
+      23,
+      25,
+      0,
+      17,
+      0,
+      "LLAMACPP_MODEL"
+    ],
+    [
+      24,
+      17,
+      0,
+      27,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Start Llamacpp",
+      "bounding": [
+        680,
+        5170,
+        450,
+        630
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Stop Llamacpp",
+      "bounding": [
+        680,
+        5840,
+        450,
+        430
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.5730855330117319,
+      "offset": [
+        1218.9203897732516,
+        -4821.825880571764
+      ]
+    },
+    "frontendVersion": "1.49.6",
+    "VHS_latentpreview": true,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
