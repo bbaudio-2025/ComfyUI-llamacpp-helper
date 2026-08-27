@@ -1,0 +1,13 @@
+{
+  "model_roots": [
+    "C:\\Users\\bbaudio\\MyApps\\AItemp",
+    "D:\\AI\\ComfyUI_windows_portable\\ComfyUI\\models\\text_encoders",
+    "D:\\AI\\ComfyUI_windows_portable\\ComfyUI\\models\\LLM"
+  ],
+  "mmproj_roots": [
+    "C:\\Users\\bbaudio\\MyApps\\AItemp",
+    "D:\\AI\\ComfyUI_windows_portable\\ComfyUI\\models\\text_encoders",
+    "D:\\AI\\ComfyUI_windows_portable\\ComfyUI\\models\\LLM"
+  ],
+  "skill_roots": ["C:\\Users\\bbaudio\\.config\\opencode\\skill"]
+}
