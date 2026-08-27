@@ -2,7 +2,7 @@
 [project]
 name = "ComfyUI-llamacpp-helper"
 description = "Simple nodes to control llamacpp in comfyui."
-version = "0.0.0"
+version = "0.0.1"
 license = { file = "LICENSE.txt" }
 dependencies  = [] 
 
