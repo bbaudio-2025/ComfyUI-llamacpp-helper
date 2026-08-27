@@ -30,6 +30,7 @@
 - **Stop llama.cpp server** — 手动停止指定端口上的服务。
 
 ### 使用说明
+0. 下载[llamacpp](https://github.com/ggml-org/llama.cpp/releases)，解压到你喜欢的目录。
 1. **手动编辑 `config.json`。** 这是最重要的一步：在插件目录下打开 `config.json`，
    把 `model_roots` / `mmproj_roots` / `skill_roots` 改成你机器上真实的目录
    （默认值包含 ComfyUI 的 `models/text_encoders` 与 `models/LLM`，以及示例路径）。
@@ -82,6 +83,7 @@ the model.
 - **Stop llama.cpp server** — manually stop the server on a given port.
 
 ### Usage
+0. Download [llamacpp](https://github.com/ggml-org/llama.cpp/releases), unzip it to any folder you want.
 1. **Edit `config.json` manually.** This is the most important step: open
   `config.json` in the plugin folder and set `model_roots` / `mmproj_roots` /
   `skill_roots` to the real directories on your machine (the defaults already
