@@ -1,0 +1,15 @@
+# pyproject.toml
+[project]
+name = "ComfyUI-llamacpp-helper"
+description = "Simple nodes to control llamacpp in comfyui."
+version = "0.0.0"
+license = { file = "LICENSE.txt" }
+dependencies  = [] 
+
+[project.urls]
+Repository = "https://github.com/bbaudio-2025/ComfyUI-llamacpp-helper"
+
+[tool.comfy]
+PublisherId = "bbaudio" 
+DisplayName = "ComfyUI-llamacpp-helper" 
+Icon = ""
