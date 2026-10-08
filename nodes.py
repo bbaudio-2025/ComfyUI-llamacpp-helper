@@ -3,9 +3,15 @@ import io
 import json
 import os
 import shlex
+import tempfile
 import urllib.error
 import urllib.request
 import wave
+
+import numpy as np
+import torch
+
+from PIL import Image
 
 from . import server_manager as sm
 
@@ -31,6 +37,12 @@ except Exception:
 
 MODEL_ROOTS = [p for p in _cfg.get("model_roots", _DEFAULT_ROOTS) if os.path.isdir(p)]
 MMPROJ_ROOTS = [p for p in _cfg.get("mmproj_roots", _DEFAULT_ROOTS) if os.path.isdir(p)]
+# A key of its own rather than reusing model_roots: the dropdown it feeds lists
+# ADAPTERS, and an adapter has the same .gguf extension as a model - only the
+# folder tells them apart. Falling back to the model roots keeps the common
+# setup (base model and adapters side by side) working.
+LORA_ROOTS = [p for p in _cfg.get("lora_roots", _cfg.get("model_roots", _DEFAULT_ROOTS))
+              if os.path.isdir(p)]
 SKILL_ROOTS = [p for p in _cfg.get("skill_roots", _DEFAULT_SKILL_ROOTS) if os.path.isdir(p)]
 
 
@@ -56,6 +68,41 @@ def _model_options():
 
 def _mmproj_options():
     return [p for p in _scan_gguf(MMPROJ_ROOTS) if "mmproj" in os.path.basename(p).lower()] or [""]
+
+
+# The dropdown entry that means "no adapter". A Combo's option IS the value it
+# stores, so the off state has to be a readable string (an empty one would be a
+# blank, near-invisible row); `_resolve_lora` turns it back into the empty
+# string every consumer downstream compares against.
+_LORA_NONE = "none"
+
+
+def _lora_options():
+    """The adapter ggups to offer, `_LORA_NONE` first ("no adapter").
+
+    "Is this file an adapter?" lives in the GGUF's own metadata, not in its
+    name - reading every header just to build a dropdown is not worth it, so
+    the one name test that IS reliable stands in: a projector is never an
+    adapter. The off entry comes first because it is also the default, so an
+    adapter merely sitting in the folder never starts changing answers.
+    """
+    adapters = [p for p in _scan_gguf(LORA_ROOTS)
+                if "mmproj" not in os.path.basename(p).lower()]
+    return [_LORA_NONE] + adapters
+
+
+def _resolve_lora(chosen, override=""):
+    """The effective adapter path: a manual override wins when it is set.
+
+    A path dropped into a scanned folder after the dropdown was built cannot
+    appear in it until a refresh, so `override` is that escape hatch; an
+    override of `_LORA_NONE`/"" turns the adapter OFF without touching the
+    dropdown. Both spellings of "no adapter" collapse to "" so everything
+    downstream sees one value.
+    """
+    over = str(override or "").strip().strip('"')
+    val = over if over else str(chosen or "").strip().strip('"')
+    return "" if val.lower() == _LORA_NONE else val
 
 
 _TEXT_EXTS = {
@@ -89,7 +136,20 @@ def _skill_options():
     return _scan_skills(SKILL_ROOTS) or [""]
 
 
-def _image_to_data_urls(image):
+def _fit_even(w, h, max_side):
+    """Scale (w, h) down to fit within max_side, keeping the aspect ratio and
+    even dimensions. Smaller inputs are left as-is but made even."""
+    if max_side and max_side > 0 and max(w, h) > max_side:
+        scale = max_side / float(max(w, h))
+        w = max(2, round(w * scale / 2.0) * 2)
+        h = max(2, round(h * scale / 2.0) * 2)
+    else:
+        w -= w % 2
+        h -= h % 2
+    return w, h
+
+
+def _image_to_data_urls(image, max_size=None):
     import torch
     from PIL import Image
     arr = image.detach().cpu().float().numpy() if hasattr(image, "cpu") else image
@@ -97,6 +157,8 @@ def _image_to_data_urls(image):
     for i in range(arr.shape[0]):
         img = (arr[i] * 255.0).clip(0, 255).astype("uint8")
         im = Image.fromarray(img, "RGB")
+        if max_size:
+            im = im.resize(_fit_even(im.size[0], im.size[1], max_size), Image.LANCZOS)
         buf = io.BytesIO()
         im.save(buf, format="PNG")
         urls.append("data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii"))
@@ -121,7 +183,29 @@ def _audio_to_b64(audio):
 
 def _video_to_b64(video):
     path = None
-    if isinstance(video, str):
+    # ComfyUI core "VIDEO" type is a VideoInput object with get_stream_source()
+    # (file path or in-memory buffer) and save_to() for composited videos.
+    if hasattr(video, "get_stream_source"):
+        src = None
+        try:
+            src = video.get_stream_source()
+        except Exception:
+            src = None
+        if isinstance(src, str) and os.path.isfile(src):
+            path = src
+        elif isinstance(src, io.BytesIO):
+            return base64.b64encode(src.getvalue()).decode("ascii")
+        elif isinstance(src, (bytes, bytearray)):
+            return base64.b64encode(bytes(src)).decode("ascii")
+        else:
+            fd, path = tempfile.mkstemp(suffix=".mp4")
+            os.close(fd)
+            try:
+                video.save_to(path)
+            except Exception:
+                os.remove(path)
+                raise
+    elif isinstance(video, str):
         path = video
     elif isinstance(video, dict):
         path = video.get("path") or video.get("filename") or video.get("video")
@@ -139,11 +223,211 @@ def _video_to_b64(video):
         return base64.b64encode(f.read()).decode("ascii")
 
 
+# Max sampled-frame dimension before encoding. Images above this are downscaled
+# so gemma-class vision models don't blow up into many 896x896 patch tokens.
+_MAX_VIDEO_SIDE = 768
+
+
+def _sample_indices(total, count):
+    """Return evenly spaced frame indices across [0, total) for 'count' takes."""
+    count = max(1, min(int(count), total))
+    if total <= 1:
+        return [0]
+    if count <= 1:
+        return [total // 2]
+    return sorted(set(round(i * (total - 1) / (count - 1)) for i in range(count)))
+
+
+def _frame_to_data_url(pil_img, max_side):
+    pil_img = pil_img.resize(_fit_even(*pil_img.size, max_side), Image.LANCZOS)
+    buf = io.BytesIO()
+    pil_img.save(buf, format="JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _data_urls_to_image_tensor(urls):
+    """Decode sent image data URLs back into a ComfyUI IMAGE tensor [N,H,W,3].
+
+    Decoding the actual payloads shows exactly what the model received,
+    including any JPEG compression artifacts.
+    """
+    frames = []
+    for u in urls:
+        raw = base64.b64decode(u.split(",", 1)[1])
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        frames.append(np.asarray(img, dtype="float32") / 255.0)
+    if not frames:
+        return torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+    return torch.from_numpy(np.stack(frames))
+
+
+def _video_frames_to_data_urls(video, max_frames, max_side=_MAX_VIDEO_SIDE):
+    """Sample a ComfyUI VIDEO object into JPEG data URLs.
+
+    Vision LLMs take images, not raw MP4s. ffmpeg extracts only the requested
+    number of frames (bounded memory); PyAV is the guaranteed fallback. Both
+    raise clear errors instead of silently returning an empty list, so a
+    text-only request is never sent by accident.
+    """
+    source = None
+    if hasattr(video, "get_stream_source"):
+        try:
+            source = video.get_stream_source()
+        except Exception:
+            source = None
+
+    if isinstance(source, (str, io.BytesIO)):
+        try:
+            urls = _video_frames_via_ffmpeg(source, max_frames, max_side)
+            if urls:
+                return urls
+        except Exception:
+            pass  # no/failed ffmpeg binary on this host -> use bundled PyAV
+        return _frames_via_av(source, max_frames, max_side)
+
+    # Composited in-memory video without a stream source: decode once, sample.
+    imgs = video.get_components().images
+    if hasattr(imgs, "cpu"):
+        imgs = imgs.cpu().numpy()
+    n = imgs.shape[0]
+    if n <= 0:
+        raise RuntimeError("video has no frames")
+    return [_frame_to_data_url(Image.fromarray(
+        (imgs[i] * 255.0 if imgs[i].max() <= 1.01 else imgs[i]).round().clip(0, 255).astype("uint8")), max_side)
+        for i in _sample_indices(n, max_frames)]
+
+
+def _frames_via_av(source, max_frames, max_side):
+    """Single streaming PyAV pass keeping only the sampled frames in memory."""
+    import av
+
+    counts = max(1, int(max_frames))
+    with av.open(source) as container:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        # Count by decoding: container nb_frames metadata can be wrong (e.g.
+        # edited files), which would sample all frames from the video head.
+        total = sum(1 for _ in stream.decode())
+    if not total:
+        raise RuntimeError("video stream reports no decodable frames")
+    idx = set(_sample_indices(total, counts))
+    images = {}
+    with av.open(source) as container:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        for pos, frame in enumerate(stream.decode()):
+            if pos in idx:
+                images[pos] = frame.to_image()
+    if not images:
+        raise RuntimeError("PyAV decoded 0 video frames")
+    return [_frame_to_data_url(images[i], max_side) for i in sorted(idx) if i in images]
+
+
+def _video_frames_via_ffmpeg(source, max_frames, max_side):
+    """Extract evenly-spaced frames with the ffmpeg binary from a path/BytesIO."""
+    import ffmpeg
+
+    cleanup_src = False
+    if isinstance(source, io.BytesIO):
+        fd, src = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        with open(src, "wb") as f:
+            f.write(source.getvalue())
+        cleanup_src = True
+    else:
+        src = source
+    try:
+        probe = ffmpeg.probe(src)
+        video_stream = next(
+            (s for s in probe.get("streams", []) if s.get("codec_type") == "video"), {})
+        duration = float(
+            video_stream.get("duration") or probe.get("format", {}).get("duration") or 0)
+        if duration <= 0:
+            raise RuntimeError("could not determine video duration")
+        w = int(video_stream.get("width", 0) or 0)
+        h = int(video_stream.get("height", 0) or 0)
+        nw, nh = _fit_even(w, h, max_side)
+
+        counts = max(1, int(max_frames))
+        # Midpoints of N equal time slices: always strictly inside the file,
+        # so -ss never lands on t=0 or EOF.
+        times = [(k + 0.5) * duration / counts for k in range(counts)]
+
+        urls = []
+        last_err = None
+        for t in times:
+            fd, out = tempfile.mkstemp(suffix=".jpg")
+            os.close(fd)  # ffmpeg.exe must be able to open the file for writing
+            try:
+                args = dict(vframes=1)
+                if nw > 0 and nh > 0:
+                    args["vf"] = "scale=%d:%d" % (nw, nh)
+                ffmpeg.input(src, ss=t).output(out, **args).overwrite_output().run(
+                    quiet=True, capture_stdout=True, capture_stderr=True)
+                with open(out, "rb") as f:
+                    urls.append("data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii"))
+            except Exception as e:
+                last_err = e
+            finally:
+                if os.path.exists(out):
+                    os.remove(out)
+        if not urls and last_err is not None:
+            raise last_err
+        return urls
+    finally:
+        if cleanup_src and os.path.exists(src):
+            os.remove(src)
+
+
+def _video_audio_to_b64(video, max_seconds):
+    """Decode the video's audio track into base64 WAV (16 kHz mono, capped).
+
+    Returns None when the video has no audio track, so callers can skip it.
+    """
+    import av
+
+    source = None
+    if hasattr(video, "get_stream_source"):
+        try:
+            source = video.get_stream_source()
+        except Exception:
+            source = None
+    if not isinstance(source, (str, io.BytesIO)):
+        return None  # composited videos carry no audio track
+
+    rate = 16000
+    cap = int(max(0, max_seconds)) * rate * 2  # 2 bytes per 16-bit sample
+    with av.open(source) as container:
+        if not container.streams.audio:
+            return None
+        stream = container.streams.audio[0]
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
+        chunks = []
+        total = 0
+        for frame in stream.decode():
+            res = resampler.resample(frame)
+            for f in (res if isinstance(res, list) else [res]):
+                data = f.to_ndarray().tobytes()
+                chunks.append(data)
+                total += len(data)
+            if cap and total >= cap:
+                break
+    pcm = b"".join(chunks)[:cap] if cap else b"".join(chunks)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 class LLamaCppModel:
     @classmethod
     def INPUT_TYPES(cls):
         models = _model_options()
         mmproj = _mmproj_options()
+        lora = _lora_options()
         return {
             "required": {
                 "server_exe": ("STRING", {"default": r"C:\Users\bbaudio\MyApps\AItemp\llama-bin-win-cuda-13.3-x64\llama-server.exe"}),
@@ -157,6 +441,12 @@ class LLamaCppModel:
             "optional": {
                 "auto_start": ("BOOLEAN", {"default": True}),
                 "mmproj_gpu_offload": ("BOOLEAN", {"default": True}),
+                "lora_path": (lora, {"default": lora[0],
+                                      "tooltip": "可选的 LoRA 适配器（必须是 .gguf，llama.cpp 只读 GGUF 格式的 adapter）。'none' = 不加载；选中后随服务器启动通过 --lora 生效。"}),
+                "lora_path_override": ("STRING", {"default": "",
+                                                  "tooltip": "手动指定扫描目录之外的 adapter .gguf 路径（填了优先于下拉框）；填 'none' 可关闭。"}),
+                "lora_scale": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05,
+                                         "tooltip": "adapter 的作用强度（--lora-scaled）。1.0（默认）等价于 --lora；0.0 = 加载但不应用；大于 1 放大，负值反向推离 adapter 学到的方向。修改会触发服务器重启。"}),
                 "advanced_launch_args": ("STRING", {"default": "", "multiline": True}),
                 "model_name": ("STRING", {"default": "llamacpp-helper"}),
             },
@@ -169,9 +459,11 @@ class LLamaCppModel:
 
     def load(self, server_exe, model_path, mmproj_path, host, port, n_gpu_layers, context_size,
              auto_start=True, mmproj_gpu_offload=True,
+             lora_path=_LORA_NONE, lora_path_override="", lora_scale=1.0,
              advanced_launch_args="", model_name="llamacpp-helper"):
         model_path = _resolve(model_path)
         mmproj = _resolve(mmproj_path) if mmproj_path and mmproj_path != "" else ""
+        lora = _resolve_lora(lora_path, lora_path_override)
         extra = []
         if advanced_launch_args.strip():
             for line in advanced_launch_args.splitlines():
@@ -181,7 +473,8 @@ class LLamaCppModel:
         if auto_start:
             sm.ensure_server(server_exe, model_path, host, port, n_gpu_layers, context_size,
                              extra_args=extra, timeout=180, mmproj=mmproj,
-                             mmproj_gpu_offload=mmproj_gpu_offload, alias=model_name)
+                             mmproj_gpu_offload=mmproj_gpu_offload, alias=model_name,
+                             lora=lora, lora_scale=lora_scale)
         return ({
             "model_path": model_path,
             "host": host,
@@ -192,6 +485,8 @@ class LLamaCppModel:
             "context_size": context_size,
             "mmproj": mmproj,
             "mmproj_gpu_offload": mmproj_gpu_offload,
+            "lora": lora,
+            "lora_scale": lora_scale,
             "extra_args": extra,
             "managed": bool(auto_start),
         },)
@@ -273,6 +568,17 @@ class LLamaCppHelperLLM:
                 "video": ("VIDEO",),
                 "skill": ("LLAMACPP_SKILL",),
                 "history": ("STRING", {"default": "", "multiline": True}),
+                "video_mode": (["frames", "blob"],
+                               {"default": "frames",
+                                "tooltip": "frames: 抽取视频关键帧作为多张图片发送(推荐, 适合 gemma 等图像视觉模型)。blob: 把整个 mp4 以 base64 作为 input_video 发送(需要 server 支持 ffmpeg 抽帧)。"}),
+                "video_frames": ("INT", {"default": 8, "min": 1, "max": 64, "step": 1,
+                                         "tooltip": "video_mode=frames 时最多抽取的帧数，越多 token 越多、越慢。"}),
+                "video_audio": ("BOOLEAN", {"default": False,
+                                            "tooltip": "同时把视频音轨转成 16kHz 单声道 wav 作为 input_audio 发送，需要 server 的 mmproj 支持音频（gemma 系列）。"}),
+                "video_audio_max_seconds": ("INT", {"default": 60, "min": 0, "max": 1800, "step": 10,
+                                                   "tooltip": "发送音频的最大时长（秒），0 = 不限制；音频 token 随时长增长，超长建议截断。"}),
+                "max_size": ("INT", {"default": 768, "min": 64, "max": 4096, "step": 64,
+                                     "tooltip": "图片/视频最大边长，另一条边按原长宽比自动计算并取偶；更大输入会被缩小，用于控制 token 数。"}),
                 "auto_start": ("BOOLEAN", {"default": True}),
                 "release_after_use": ("BOOLEAN", {"default": True}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 2.0, "step": 0.01}),
@@ -284,13 +590,15 @@ class LLamaCppHelperLLM:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("text", "reasoning")
+    RETURN_TYPES = ("STRING", "STRING", "IMAGE")
+    RETURN_NAMES = ("text", "reasoning", "sent_images")
     FUNCTION = "generate"
     CATEGORY = MODEL_CATEGORY
 
     def generate(self, llamacpp_model, prompt, system_prompt="", image=None, audio=None, video=None,
-                 skill=None, history="", auto_start=True, release_after_use=True,
+                 skill=None, history="", video_mode="frames", video_frames=8, video_audio=False,
+                 video_audio_max_seconds=60, max_size=768,
+                 auto_start=True, release_after_use=True,
                  temperature=0.8, top_p=0.95, top_k=40, max_tokens=1024, repeat_penalty=1.0, seed=-1):
         if not llamacpp_model.get("model_path"):
             raise ValueError("llamacpp_model is not loaded")
@@ -311,6 +619,8 @@ class LLamaCppHelperLLM:
                     mmproj=llamacpp_model.get("mmproj", ""),
                     mmproj_gpu_offload=llamacpp_model.get("mmproj_gpu_offload", True),
                     alias=model_name,
+                    lora=llamacpp_model.get("lora", ""),
+                    lora_scale=llamacpp_model.get("lora_scale", 1.0),
                 )
 
         try:
@@ -319,12 +629,28 @@ class LLamaCppHelperLLM:
                 for p in skill.get("images", []):
                     media.append({"type": "image_url", "image_url": {"url": _image_file_to_data_url(p)}})
             if image is not None:
-                for url in _image_to_data_urls(image):
+                for url in _image_to_data_urls(image, max_size):
                     media.append({"type": "image_url", "image_url": {"url": url}})
             if audio is not None:
                 media.append({"type": "input_audio", "input_audio": {"data": _audio_to_b64(audio), "format": "wav"}})
             if video is not None:
-                media.append({"type": "input_video", "input_video": {"data": _video_to_b64(video), "format": "mp4"}})
+                if video_mode == "blob":
+                    media.append({"type": "input_video", "input_video": {"data": _video_to_b64(video), "format": "mp4"}})
+                else:
+                    for url in _video_frames_to_data_urls(video, video_frames, max_size):
+                        media.append({"type": "image_url", "image_url": {"url": url}})
+                    if video_audio:
+                        aud_b64 = _video_audio_to_b64(video, video_audio_max_seconds)
+                        if aud_b64:
+                            media.append({"type": "input_audio", "input_audio": {"data": aud_b64, "format": "wav"}})
+                        else:
+                            print("[llamacpp-helper] video has no audio track, audio skipped")
+
+            n_img = sum(1 for m in media if m.get("type") == "image_url")
+            if n_img:
+                print("[llamacpp-helper] sending %d image(s) to the model" % n_img)
+            sent_imgs = _data_urls_to_image_tensor(
+                [m["image_url"]["url"] for m in media if m.get("type") == "image_url"])
 
             content = [{"type": "text", "text": prompt}] + media if media else prompt
 
@@ -342,7 +668,7 @@ class LLamaCppHelperLLM:
                 try:
                     messages = list(json.loads(history))
                 except Exception as e:
-                    return ("history JSON error: %s" % e, "")
+                    return ("history JSON error: %s" % e, "", sent_imgs)
                 if system_text:
                     messages.insert(0, {"role": "system", "content": system_text})
                 messages.append({"role": "user", "content": content})
@@ -370,14 +696,17 @@ class LLamaCppHelperLLM:
                     data = json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", "replace")
-                return ("LLM HTTP error %d: %s" % (e.code, detail), "")
+                return ("LLM HTTP error %d: %s" % (e.code, detail), "", sent_imgs)
             except Exception as e:
-                return ("LLM request error: %s" % e, "")
+                return ("LLM request error: %s" % e, "", sent_imgs)
 
             msg = data["choices"][0]["message"]
             text = msg.get("content", "") or ""
             reasoning = msg.get("reasoning_content", "") or ""
-            return (text, reasoning)
+            usage = data.get("usage") or {}
+            print("[llamacpp-helper] server usage: prompt_tokens=%s completion_tokens=%s"
+                  % (usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?")))
+            return (text, reasoning, sent_imgs)
         finally:
             if release_after_use and llamacpp_model.get("managed"):
                 sm.stop_server(port)
